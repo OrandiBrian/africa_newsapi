@@ -31,6 +31,11 @@ def fetch_feed_data(url, source_name):
     try:
         feed = feedparser.parse(url)
         articles = []
+        if hasattr(feed, 'bozo_exception') and feed.bozo_exception:
+             # Log warning but attempt to parse anyway
+             print(f"Warning parsing {url}: {feed.bozo_exception}")
+
+        articles = []
         for entry in feed.entries[:6]: 
             summary = entry.get('summary', 'No summary.')
             summary = re.sub('<[^<]+?>', '', summary) 
@@ -51,7 +56,9 @@ def fetch_feed_data(url, source_name):
                 'sentiment_label': sent_label
             })
         return articles
-    except: return []
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
+        return []
 
 def fetch_all_feeds(unique_feeds):
     all_stories = []
