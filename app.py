@@ -3,8 +3,9 @@ import feedparser
 import time
 import re
 from datetime import datetime
+from google import genai
 
-# --- CONFIGURATION (FORCE DARK THEME) ---
+# --- CONFIGURATION ---
 st.set_page_config(
     page_title="African Story Radar", 
     layout="wide", 
@@ -12,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CUSTOM CSS (DARK MODE) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #0E1117; color: #FAFAFA; }
@@ -25,30 +26,36 @@ st.markdown("""
         background-color: #262730; color: #FAFAFA; font-weight: 500;
     }
     div.stButton > button:first-child:hover {
-        border-color: #ff4b4b; color: #ff4b4b; background-color: #0E1117;
+        border-color: #4DA6FF; color: #4DA6FF; background-color: #0E1117;
     }
     
-    /* Image Placeholder */
+    /* Section Headers in Sidebar */
+    .sidebar-region-header {
+        color: #8b92a9;
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 25px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #4A4A4A;
+        padding-bottom: 5px;
+    }
+
     .img-placeholder {
         background-color: #262730; height: 120px; border-radius: 8px; 
         display: flex; align-items: center; justify-content: center; 
         color: #888; border: 1px solid #4A4A4A;
     }
-    
-    /* Links & Accents */
     a { color: #4DA6FF !important; }
-    hr { border-color: #4A4A4A; }
-    
-    /* Custom Scrollbar for cleaner look */
-    ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-track { background: #0E1117; }
-    ::-webkit-scrollbar-thumb { background: #4A4A4A; border-radius: 4px; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- SESSION STATE ---
 if 'bookmarks' not in st.session_state:
     st.session_state.bookmarks = []
+if 'generated_copy' not in st.session_state:
+    st.session_state.generated_copy = {}
 
 # --- HELPER FUNCTIONS ---
 def extract_image_url(entry):
@@ -79,7 +86,6 @@ def get_relative_time(entry):
         published_ts = time.mktime(entry.published_parsed)
         now_ts = time.time()
         delta_seconds = now_ts - published_ts
-        
         if delta_seconds < 60: return "Just now"
         elif delta_seconds < 3600: return f"{int(delta_seconds/60)}m ago"
         elif delta_seconds < 86400: return f"{int(delta_seconds/3600)}h ago"
@@ -91,7 +97,27 @@ def parse_date(entry):
         return time.mktime(entry.published_parsed)
     return 0
 
-# --- DATA FETCHING (Cached) ---
+# --- GEMINI AI (V2.5) ---
+def generate_ai_copy(api_key, story_title, story_summary, source):
+    try:
+        client = genai.Client(api_key=api_key)
+        prompt = f"""
+        You are a top social media manager for an African media agency.
+        Write a punchy, engaging LinkedIn/Instagram caption for this news story.
+        Headline: {story_title}
+        Source: {source}
+        Summary: {story_summary}
+        Guidelines: Tone: Professional but exciting. Length: Under 100 words. Include 3 hashtags.
+        """
+        response = client.models.generate_content(
+            model="gemini-2.5-flash", 
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# --- DATA FETCHING ---
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_feed_data(url, source_name):
     try:
@@ -117,113 +143,180 @@ def fetch_feed_data(url, source_name):
     except:
         return []
 
-# --- DATA SOURCES ---
-SOURCE_MAP = {
-    "Buzzroom (Buzz Central)": "https://buzzcentral.co.ke/feed/",
-    "The Africa Report": "https://www.theafricareport.com/feed/",
-    "BBC News Africa": "https://feeds.bbci.co.uk/news/world/africa/rss.xml",
-    "The Guardian (Africa)": "https://www.theguardian.com/world/africa/rss",
-    "Africanews": "https://www.africanews.com/feed/rss",
-    "Quartz Africa": "https://qz.com/africa/rss",
-    "Daily Nation (KE)": "https://nation.africa/service/rss/kenya",
-    "The East African": "https://www.theeastafrican.co.ke/service/rss/news",
-    "The Standard (KE)": "https://www.standardmedia.co.ke/rss/headlines.php",
-    "Vanguard (NG)": "https://www.vanguardngr.com/feed/",
-    "Punch (NG)": "https://punchng.com/feed/",
-    "MyJoyOnline (GH)": "https://www.myjoyonline.com/feed/",
-    "News24 (ZA)": "https://feeds.news24.com/articles/news24/TopStories/rss",
-    "Mail & Guardian (ZA)": "https://mg.co.za/feed/",
-    "TechCabal": "https://techcabal.com/feed/",
-    "Business Daily": "https://businessdailyafrica.com/service/rss/bd/news",
-    "Disrupt Africa": "https://disrupt-africa.com/feed/",
-    "BellaNaija": "https://www.bellanaija.com/feed/",
-    "OkayAfrica": "https://www.okayafrica.com/feed/"
+# --- EXTENSIVE DATA SOURCES ---
+FEEDS_BY_REGION = {
+    "Pan-African & Tech": {
+        "The Africa Report": "https://www.theafricareport.com/feed/",
+        "BBC News Africa": "https://feeds.bbci.co.uk/news/world/africa/rss.xml",
+        "TechCabal": "https://techcabal.com/feed/",
+        "Buzzroom": "https://buzzcentral.co.ke/feed/",
+        "The Guardian": "https://www.theguardian.com/world/africa/rss",
+    },
+    "Sahel (English)": {
+        "HumAngle": "https://humanglemedia.com/feed/",
+        "New Humanitarian": "https://www.thenewhumanitarian.org/rss/africa.xml",
+        "Voice of America": "https://www.voanews.com/api/zgbpvevmoq"
+    },
+    "East Africa": {
+        "Daily Nation (KE)": "https://nation.africa/service/rss/kenya",
+        "East African": "https://www.theeastafrican.co.ke/service/rss/news",
+        "Monitor (UG)": "https://www.monitor.co.ug/service/rss/uganda",
+        "New Times (RW)": "https://www.newtimes.co.rw/rss",
+        "AllAfrica (East)": "https://allafrica.com/tools/headlines/rdf/eastafrica/headlines.rdf"
+    },
+    "West Africa": {
+        "Punch (NG)": "https://punchng.com/feed/",
+        "Vanguard (NG)": "https://www.vanguardngr.com/feed/",
+        "MyJoyOnline (GH)": "https://www.myjoyonline.com/feed/",
+        "AllAfrica (West)": "https://allafrica.com/tools/headlines/rdf/westafrica/headlines.rdf"
+    },
+    "Southern Africa": {
+        "News24 (ZA)": "https://feeds.news24.com/articles/news24/TopStories/rss",
+        "Mail & Guardian": "https://mg.co.za/feed/",
+        "The Herald (ZW)": "https://www.herald.co.zw/feed/",
+        "AllAfrica (South)": "https://allafrica.com/tools/headlines/rdf/southernafrica/headlines.rdf"
+    },
+    "North Africa": {
+        "Ahram Online (EG)": "https://english.ahram.org.eg/News/RSS/1.aspx",
+        "Morocco World": "https://www.moroccoworldnews.com/feed",
+        "AllAfrica (North)": "https://allafrica.com/tools/headlines/rdf/northafrica/headlines.rdf"
+    },
+    "Central Africa": {
+        "AllAfrica (Central)": "https://allafrica.com/tools/headlines/rdf/centralafrica/headlines.rdf"
+    }
 }
+
+AFRICAN_COUNTRIES = sorted([
+    "Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", 
+    "Cabo Verde", "Cameroon", "Central African Republic", "Chad", "Comoros", 
+    "Democratic Republic of the Congo", "Republic of the Congo", "Cote d'Ivoire", 
+    "Djibouti", "Egypt", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", 
+    "Gabon", "Gambia", "Ghana", "Guinea", "Guinea-Bissau", "Kenya", "Lesotho", 
+    "Liberia", "Libya", "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", 
+    "Morocco", "Mozambique", "Namibia", "Niger", "Nigeria", "Rwanda", 
+    "Sao Tome and Principe", "Senegal", "Seychelles", "Sierra Leone", "Somalia", 
+    "South Africa", "South Sudan", "Sudan", "Tanzania", "Togo", "Tunisia", 
+    "Uganda", "Zambia", "Zimbabwe"
+])
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("Radar Controls")
+    st.title("Radar Controls")
     
-    # BOOKMARKS
-    if st.session_state.bookmarks:
-        st.subheader(f"⭐ Saved ({len(st.session_state.bookmarks)})")
-        for i, item in enumerate(st.session_state.bookmarks):
-            st.markdown(f"<small>{i+1}. <a href='{item['link']}' style='color:#FF4B4B'>{item['title'][:30]}...</a></small>", unsafe_allow_html=True)
-            if st.button("x", key=f"del_{i}"):
-                del st.session_state.bookmarks[i]
-                st.rerun()
-        st.divider()
+    with st.expander("✨ Gemini Settings", expanded=False):
+        gemini_key = st.text_input("API Key", type="password", placeholder="Paste Google Key Here")
 
-    # SOURCE SELECTOR
-    st.subheader("Select Sources")
-    all_source_names = sorted(list(SOURCE_MAP.keys()))
+    st.markdown("---")
     
-    # Pre-select Buzzroom so she sees it immediately
-    default_selection = ["Buzzroom (Buzz Central)", "The Guardian (Africa)", "TechCabal"]
+    # --- UNIVERSAL SELECT ALL ---
+    # This single checkbox controls everything
+    universal_all = st.checkbox("SELECT ALL SOURCES", value=False)
     
-    selected_sources = st.multiselect(
-        "Sources:",
-        options=all_source_names,
-        default=default_selection
-    )
+    st.markdown("---")
     
-    if st.button("🔄 Force Refresh", type="primary"):
+    selected_feeds = []
+
+    # --- FLAT LIST LOGIC (NO DROPDOWNS) ---
+    for region, feeds in FEEDS_BY_REGION.items():
+        # 1. Region Header
+        st.markdown(f"<div class='sidebar-region-header'>{region}</div>", unsafe_allow_html=True)
+        
+        # 2. Logic:
+        # If Universal All is checked -> We auto-select everything and hide checkboxes (cleaner).
+        # If Universal All is OFF -> We show checkboxes for manual picking.
+        
+        if universal_all:
+            # Add all feeds silently
+            for name, url in feeds.items():
+                selected_feeds.append((name, url))
+            st.caption(f"⚡ {len(feeds)} sources active")
+        else:
+            # Show individual checkboxes
+            for name, url in feeds.items():
+                # Pre-select Pan-African ones by default for good UX
+                is_default = True if "Pan-African" in region else False
+                
+                if st.checkbox(name, value=is_default, key=f"chk_{name}"):
+                    selected_feeds.append((name, url))
+
+    st.markdown("---")
+    if st.button("🔄 Check Updates", type="primary"):
         st.cache_data.clear()
         st.rerun()
 
-    st.divider()
-
-    # FILTER & SORT
-    search_query = st.text_input("🔍 Search", placeholder="e.g. Climate, AI...")
-    sort_option = st.radio("Sort By", ["🕒 Newest First", "🕓 Oldest First", "🔤 Source Name"], index=0)
-
 # --- MAIN APP ---
-st.title("Africa Story Radar 🌙")
+st.title("Africa Story Radar")
 
-if not selected_sources:
-    st.info("👈 Please select at least one source in the sidebar.")
+# --- SMART SEARCH ---
+with st.container():
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        search_query = st.text_input("🔍 Search Keyword", placeholder="e.g. Coup, Gold, Cotton...")
+    with c2:
+        selected_countries = st.multiselect("🏳️ Filter by Country", options=AFRICAN_COUNTRIES)
+
+# --- APP LOGIC ---
+if not selected_feeds:
+    st.info("👈 Select sources in the sidebar (or check 'SELECT ALL') to start.")
 else:
-    # 1. FETCH
     all_stories = []
-    
-    with st.spinner(f'Checking {len(selected_sources)} sources...'):
-        for source_name in selected_sources:
-            url = SOURCE_MAP[source_name]
-            stories = fetch_feed_data(url, source_name)
+    with st.spinner(f'Scanning {len(selected_feeds)} sources...'):
+        for name, url in selected_feeds:
+            stories = fetch_feed_data(url, name)
             all_stories.extend(stories)
 
-    # 2. FILTER
-    if search_query:
-        query = search_query.lower()
-        all_stories = [s for s in all_stories if query in s['title'].lower() or query in s['summary'].lower()]
+    # DEDUPLICATION
+    seen_urls = set()
+    unique_stories = []
+    for story in all_stories:
+        if story['link'] not in seen_urls:
+            unique_stories.append(story)
+            seen_urls.add(story['link'])
+    all_stories = unique_stories
 
-    # 3. SORT
-    if sort_option == "🕒 Newest First":
-        all_stories = sorted(all_stories, key=lambda x: x['timestamp'], reverse=True)
-    elif sort_option == "🕓 Oldest First":
-        all_stories = sorted(all_stories, key=lambda x: x['timestamp'], reverse=False)
-    elif sort_option == "🔤 Source Name":
-        all_stories = sorted(all_stories, key=lambda x: x['source'])
-
-    # 4. DISPLAY
-    if not all_stories:
-        st.warning("No stories found.")
+    # FILTER LOGIC
+    filtered_stories = []
+    if not search_query and not selected_countries:
+        filtered_stories = all_stories
     else:
-        st.caption(f"Showing {len(all_stories)} stories.")
-        
         for story in all_stories:
+            match_keyword = True
+            match_country = True
+            
+            if search_query:
+                query = search_query.lower()
+                if query not in story['title'].lower() and query not in story['summary'].lower():
+                    match_keyword = False
+            
+            if selected_countries:
+                found_country = False
+                for country in selected_countries:
+                    c_lower = country.lower()
+                    if (c_lower in story['title'].lower() or 
+                        c_lower in story['summary'].lower() or 
+                        c_lower in story['source'].lower()):
+                        found_country = True
+                        break
+                match_country = found_country
+            
+            if match_keyword and match_country:
+                filtered_stories.append(story)
+
+    filtered_stories = sorted(filtered_stories, key=lambda x: x['timestamp'], reverse=True)
+
+    if not filtered_stories:
+        st.warning("No stories found matching your criteria.")
+    else:
+        st.caption(f"Found {len(filtered_stories)} stories.")
+        
+        for story in filtered_stories:
             with st.container():
                 c1, c2 = st.columns([1, 3])
-                
                 with c1:
                     if story['image']:
                         st.image(story['image'], use_container_width=True)
                     else:
-                        st.markdown("""
-                            <div class="img-placeholder">
-                                📷 No Image
-                            </div>
-                            """, unsafe_allow_html=True)
+                        st.markdown("""<div class="img-placeholder">📷 No Image</div>""", unsafe_allow_html=True)
                 
                 with c2:
                     st.markdown(
@@ -238,27 +331,22 @@ else:
                     if len(story['summary']) > 5:
                         st.markdown(f"<span style='color:#B0B0B0'>{story['summary'][:200]}...</span>", unsafe_allow_html=True)
                     
-                    # ACTION BUTTONS
                     st.write("") 
-                    col_a, col_b, col_c = st.columns([1, 1, 2])
-                    
+                    col_a, col_b = st.columns([1, 3])
                     with col_a:
                         st.link_button("🔗 Read", story['link'])
-                    
                     with col_b:
-                        is_saved = any(b['link'] == story['link'] for b in st.session_state.bookmarks)
-                        if is_saved:
-                            st.button("✅ Saved", key=f"saved_{story['link']}", disabled=True)
-                        else:
-                            if st.button("⭐ Save", key=f"save_{story['link']}"):
-                                st.session_state.bookmarks.append(story)
-                                st.rerun()
-
-                    with col_c:
-                         if st.button("✨ Draft Copy", key=f"draft_{story['link']}"):
-                            st.caption("Copy this:")
-                            st.code(f"🌍 NEW STORY: {story['title']}\n\n"
-                                    f"Trend alert from {story['source']}: {story['summary'][:100]}...\n"
-                                    f"#Africa #{story['source'].replace(' ', '')}")
+                        draft_key = f"draft_{story['link']}"
+                        if st.button("✨ Draft with Gemini", key=draft_key):
+                            if not gemini_key:
+                                st.error("👈 Please enter API Key in sidebar!")
+                            else:
+                                with st.spinner("Writing..."):
+                                    ai_text = generate_ai_copy(gemini_key, story['title'], story['summary'], story['source'])
+                                    st.session_state.generated_copy[story['link']] = ai_text
+                        
+                        if story['link'] in st.session_state.generated_copy:
+                            st.success("Draft Generated:")
+                            st.code(st.session_state.generated_copy[story['link']], language="markdown")
                 
                 st.divider()
