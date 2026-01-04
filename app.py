@@ -69,7 +69,13 @@ with st.sidebar:
     st.title("Radar Controls")
     
     with st.expander("✨ Gemini Settings"):
-        gemini_key = st.text_input("API Key", type="password", placeholder="Paste Google Key Here")
+        # Try to load from secrets, otherwise from text input
+        default_key = st.secrets.get("GEMINI_API_KEY", "")
+        if default_key:
+            st.success("API Key loaded from secrets! 🔒")
+            gemini_key = default_key
+        else:
+            gemini_key = st.text_input("API Key", type="password", placeholder="Paste Google Key Here")
 
     st.markdown("---")
     
