@@ -268,9 +268,13 @@ else:
                     if len(story['summary']) > 5: st.markdown(f"<span style='color:#B0B0B0'>{story['summary'][:200]}...</span>", unsafe_allow_html=True)
                     
                     st.write("") 
-                    col_a, col_b, col_c = st.columns([1, 1, 1.5])
-                    with col_a: st.link_button("🔗 Read", story['link'])
-                    with col_b:
+                    # Use small, fixed-width-ish columns to pack buttons closer
+                    c_read, c_brief, c_draft, c_save = st.columns([0.8, 1.2, 1.1, 0.9])
+                    
+                    with c_read: 
+                        st.link_button("🔗 Read", story['link'])
+                    
+                    with c_brief:
                         is_in_queue = story['link'] in st.session_state.newsletter_queue
                         if is_in_queue:
                              if st.button("❌ Remove", key=f"rem_{story['link']}"):
@@ -280,23 +284,23 @@ else:
                              if st.button("📝 Add to Brief", key=f"add_{story['link']}"):
                                  st.session_state.newsletter_queue[story['link']] = story
                                  st.rerun()
-                    with col_c:
-                        # Draft Post Button
+                    
+                    with c_draft:
                         if st.button("✨ Draft Post", key=f"draft_{story['link']}"):
                             if not gemini_key: st.error("Add API Key!")
                             else:
                                 with st.spinner("Writing..."):
                                     st.session_state.generated_copy[story['link']] = generate_single_post(gemini_key, story)
-                        
-                        # Save Button
+                    
+                    with c_save:
                         is_saved = story['link'] in st.session_state.saved_stories_db
                         save_btn_label = "✅ Saved" if is_saved else "💾 Save"
                         if st.button(save_btn_label, key=f"save_{story['link']}"):
                             toggle_save(story)
                             st.rerun()
 
-                        if story['link'] in st.session_state.generated_copy:
-                            st.code(st.session_state.generated_copy[story['link']], language="markdown")
+                    if story['link'] in st.session_state.generated_copy:
+                        st.code(st.session_state.generated_copy[story['link']], language="markdown")
                 st.divider()
 
         # 6. PAGINATION CONTROLS
