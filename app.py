@@ -3,6 +3,7 @@ import feedparser
 import time
 import re
 import math
+import concurrent.futures
 from datetime import datetime
 from google import genai
 from textblob import TextBlob  # pip install textblob
@@ -297,9 +298,17 @@ else:
     unique_feeds = list(set(selected_feeds))
     
     with st.spinner(f'Scanning {len(unique_feeds)} sources...'):
-        for name, url in unique_feeds:
-            stories = fetch_feed_data(url, name)
-            all_stories.extend(stories)
+        # Parallel Fetching
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Create a dictionary to map futures to source names (optional, for debugging)
+            future_to_url = {executor.submit(fetch_feed_data, url, name): name for name, url in unique_feeds}
+            
+            for future in concurrent.futures.as_completed(future_to_url):
+                try:
+                    stories = future.result()
+                    all_stories.extend(stories)
+                except Exception as e:
+                    st.error(f"Error fetching feed: {e}")
 
     # Deduplicate
     seen_urls = set()
