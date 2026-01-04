@@ -36,7 +36,7 @@ def fetch_feed_data(url, source_name):
              print(f"Warning parsing {url}: {feed.bozo_exception}")
 
         articles = []
-        for entry in feed.entries[:6]: 
+        for entry in feed.entries[:10]: 
             summary = entry.get('summary', 'No summary.')
             summary = re.sub('<[^<]+?>', '', summary) 
             if "Guardian" in source_name and "<" in summary: summary = summary.split("<")[0]
