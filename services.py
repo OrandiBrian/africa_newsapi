@@ -4,6 +4,7 @@ import concurrent.futures
 import feedparser
 import streamlit as st
 import re
+import cloudscraper
 from google import genai
 from utils import get_sentiment, extract_image_url, format_display_date, get_relative_time, parse_date
 
@@ -13,26 +14,31 @@ def fetch_content_robust(url):
     Attempts to fetch content/RSS XML from a URL using multiple methods 
     to bypass bot protection (Cloudflare, etc.).
     """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5"
-    }
-    
-    # Method 1: Requests
+    # Method 1: Cloudscraper (Best for Cloudflare)
     try:
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(url, timeout=15)
+        if response.status_code == 200:
+            return response.content
+    except Exception as e:
+        print(f"[Cloudscraper] Failed for {url}: {e}")
+
+    # Method 2: Requests (Standard)
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+        }
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             return response.content
     except Exception as e:
         print(f"[Requests] Failed for {url}: {e}")
 
-    # Method 2: Curl (Fallback)
+    # Method 3: Curl (Last Resort)
     try:
         result = subprocess.run(
-            ["curl", "-L", "-A", headers["User-Agent"], url],
+            ["curl", "-L", "-A", "Mozilla/5.0", url],
             capture_output=True,
-            text=False, # Return bytes
             timeout=15
         )
         if result.returncode == 0 and result.stdout:

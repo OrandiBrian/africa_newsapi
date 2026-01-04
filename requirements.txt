@@ -2,3 +2,4 @@ streamlit
 feedparser
 google-genai
 textblob
+cloudscraper
