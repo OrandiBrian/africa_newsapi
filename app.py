@@ -70,7 +70,13 @@ with st.sidebar:
     
     with st.expander("✨ Gemini Settings"):
         # Try to load from secrets, otherwise from text input
-        default_key = st.secrets.get("GEMINI_API_KEY", "")
+        try:
+            default_key = st.secrets.get("GEMINI_API_KEY", "")
+        except FileNotFoundError:
+            default_key = ""
+        except Exception:
+            default_key = ""
+
         if default_key:
             st.success("API Key loaded from secrets! 🔒")
             gemini_key = default_key
