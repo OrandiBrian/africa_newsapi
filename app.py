@@ -3,6 +3,7 @@ import math
 import concurrent.futures
 from config import FEEDS_BY_REGION, ALL_SOURCES_FLAT, AFRICAN_COUNTRIES, ITEMS_PER_PAGE
 from services import fetch_feed_data, generate_single_post, generate_newsletter, fetch_all_feeds
+from storage import load_favorites, save_favorites
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -56,6 +57,12 @@ if 'generated_copy' not in st.session_state:
     st.session_state.generated_copy = {}
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 0
+if 'db_favorites' not in st.session_state:
+    st.session_state.db_favorites = load_favorites()
+
+# --- CALLBACKS ---
+def update_favorites():
+    save_favorites(st.session_state.fav_selection)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -68,7 +75,13 @@ with st.sidebar:
     
     # FAVORITES
     st.markdown("### ❤️ Favorites")
-    favorite_selection = st.multiselect("Top Picks:", options=sorted(list(ALL_SOURCES_FLAT.keys())))
+    favorite_selection = st.multiselect(
+        "Top Picks:", 
+        options=sorted(list(ALL_SOURCES_FLAT.keys())),
+        default=st.session_state.db_favorites,
+        key="fav_selection",
+        on_change=update_favorites
+    )
     
     st.markdown("---")
     
