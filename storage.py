@@ -2,6 +2,7 @@ import json
 import os
 
 DB_FILE = "favorites.json"
+SAVED_STORIES_FILE = "saved_stories.json"
 
 def load_favorites():
     """Load favorites from local JSON file."""
@@ -20,3 +21,21 @@ def save_favorites(favorites_list):
             json.dump(favorites_list, f)
     except Exception as e:
         print(f"Error saving favorites: {e}")
+
+def load_saved_stories():
+    """Load saved stories from local JSON file."""
+    if not os.path.exists(SAVED_STORIES_FILE):
+        return {}
+    try:
+        with open(SAVED_STORIES_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_saved_stories(stories_dict):
+    """Save stories dictionary to local JSON file."""
+    try:
+        with open(SAVED_STORIES_FILE, "w") as f:
+            json.dump(stories_dict, f)
+    except Exception as e:
+        print(f"Error saving stories: {e}")

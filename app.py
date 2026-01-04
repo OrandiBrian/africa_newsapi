@@ -3,7 +3,7 @@ import math
 import concurrent.futures
 from config import FEEDS_BY_REGION, ALL_SOURCES_FLAT, AFRICAN_COUNTRIES, ITEMS_PER_PAGE
 from services import fetch_feed_data, generate_single_post, generate_newsletter, fetch_all_feeds
-from storage import load_favorites, save_favorites
+from storage import load_favorites, save_favorites, load_saved_stories, save_saved_stories
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -59,10 +59,20 @@ if 'current_page' not in st.session_state:
     st.session_state.current_page = 0
 if 'db_favorites' not in st.session_state:
     st.session_state.db_favorites = load_favorites()
+if 'saved_stories_db' not in st.session_state:
+    st.session_state.saved_stories_db = load_saved_stories()
 
 # --- CALLBACKS ---
 def update_favorites():
     save_favorites(st.session_state.fav_selection)
+
+def toggle_save(story):
+    link = story['link']
+    if link in st.session_state.saved_stories_db:
+        del st.session_state.saved_stories_db[link]
+    else:
+        st.session_state.saved_stories_db[link] = story
+    save_saved_stories(st.session_state.saved_stories_db)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -94,6 +104,29 @@ with st.sidebar:
         key="fav_selection",
         on_change=update_favorites
     )
+    
+    st.markdown("---")
+
+    # SAVED STORIES
+    st.markdown(f"### 💾 Saved Stories ({len(st.session_state.saved_stories_db)})")
+    if st.session_state.saved_stories_db:
+        with st.expander("View Saved Collection"):
+            for link, s in list(st.session_state.saved_stories_db.items()):
+                st.markdown(f"**[{s['title']}]({s['link']})**")
+                c_del, c_copy = st.columns([1, 1])
+                with c_del:
+                    if st.button("🗑️", key=f"del_save_{link}"):
+                        toggle_save(s)
+                        st.rerun()
+                with c_copy:
+                    if st.button("✨", key=f"copy_save_{link}", help="Draft Post"):
+                        if not gemini_key:
+                             st.error("No API Key")
+                        else:
+                             with st.spinner("Writing..."):
+                                 copy_text = generate_single_post(gemini_key, s)
+                                 st.session_state.generated_copy[link] = copy_text
+                                 st.rerun()  # Rerun to show the generated copy in the main area if we want, or just update state
     
     st.markdown("---")
     
@@ -248,11 +281,20 @@ else:
                                  st.session_state.newsletter_queue[story['link']] = story
                                  st.rerun()
                     with col_c:
+                        # Draft Post Button
                         if st.button("✨ Draft Post", key=f"draft_{story['link']}"):
                             if not gemini_key: st.error("Add API Key!")
                             else:
                                 with st.spinner("Writing..."):
                                     st.session_state.generated_copy[story['link']] = generate_single_post(gemini_key, story)
+                        
+                        # Save Button
+                        is_saved = story['link'] in st.session_state.saved_stories_db
+                        save_btn_label = "✅ Saved" if is_saved else "💾 Save"
+                        if st.button(save_btn_label, key=f"save_{story['link']}"):
+                            toggle_save(story)
+                            st.rerun()
+
                         if story['link'] in st.session_state.generated_copy:
                             st.code(st.session_state.generated_copy[story['link']], language="markdown")
                 st.divider()
