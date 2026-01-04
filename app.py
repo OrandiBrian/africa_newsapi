@@ -1,12 +1,8 @@
 import streamlit as st
-import feedparser
-import time
-import re
 import math
 import concurrent.futures
-from datetime import datetime
-from google import genai
-from textblob import TextBlob  # pip install textblob
+from config import FEEDS_BY_REGION, ALL_SOURCES_FLAT, AFRICAN_COUNTRIES, ITEMS_PER_PAGE
+from services import fetch_feed_data, generate_single_post, generate_newsletter, fetch_all_feeds
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -15,9 +11,6 @@ st.set_page_config(
     page_icon="🌍",
     initial_sidebar_state="expanded"
 )
-
-# --- CONSTANTS ---
-ITEMS_PER_PAGE = 10
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -63,162 +56,6 @@ if 'generated_copy' not in st.session_state:
     st.session_state.generated_copy = {}
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 0
-
-# --- EXTENSIVE DATA SOURCES ---
-FEEDS_BY_REGION = {
-    "Pan-African & Tech": {
-        "The Africa Report": "https://www.theafricareport.com/feed/",
-        "BBC News Africa": "https://feeds.bbci.co.uk/news/world/africa/rss.xml",
-        "TechCabal": "https://techcabal.com/feed/",
-        "Buzzroom": "https://buzzcentral.co.ke/feed/",
-        "The Guardian": "https://www.theguardian.com/world/africa/rss",
-    },
-    "Sahel (English)": {
-        "HumAngle": "https://humanglemedia.com/feed/",
-        "New Humanitarian": "https://www.thenewhumanitarian.org/rss/africa.xml",
-        "Voice of America": "https://www.voanews.com/api/zgbpvevmoq"
-    },
-    "East Africa": {
-        "Daily Nation (KE)": "https://nation.africa/service/rss/kenya",
-        "East African": "https://www.theeastafrican.co.ke/service/rss/news",
-        "Monitor (UG)": "https://www.monitor.co.ug/service/rss/uganda",
-        "New Times (RW)": "https://www.newtimes.co.rw/rss",
-        "AllAfrica (East)": "https://allafrica.com/tools/headlines/rdf/eastafrica/headlines.rdf"
-    },
-    "West Africa": {
-        "Punch (NG)": "https://punchng.com/feed/",
-        "Vanguard (NG)": "https://www.vanguardngr.com/feed/",
-        "MyJoyOnline (GH)": "https://www.myjoyonline.com/feed/",
-        "AllAfrica (West)": "https://allafrica.com/tools/headlines/rdf/westafrica/headlines.rdf"
-    },
-    "Southern Africa": {
-        "News24 (ZA)": "https://feeds.news24.com/articles/news24/TopStories/rss",
-        "Mail & Guardian": "https://mg.co.za/feed/",
-        "The Herald (ZW)": "https://www.herald.co.zw/feed/",
-        "AllAfrica (South)": "https://allafrica.com/tools/headlines/rdf/southernafrica/headlines.rdf"
-    },
-    "North Africa": {
-        "Ahram Online (EG)": "https://english.ahram.org.eg/News/RSS/1.aspx",
-        "Morocco World": "https://www.moroccoworldnews.com/feed",
-        "AllAfrica (North)": "https://allafrica.com/tools/headlines/rdf/northafrica/headlines.rdf"
-    },
-    "Central Africa": {
-        "AllAfrica (Central)": "https://allafrica.com/tools/headlines/rdf/centralafrica/headlines.rdf"
-    }
-}
-
-# Flatten sources for Favorites
-ALL_SOURCES_FLAT = {}
-for region, feeds in FEEDS_BY_REGION.items():
-    for name, url in feeds.items():
-        ALL_SOURCES_FLAT[name] = url
-
-AFRICAN_COUNTRIES = sorted([
-    "Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", 
-    "Cabo Verde", "Cameroon", "Central African Republic", "Chad", "Comoros", 
-    "Democratic Republic of the Congo", "Republic of the Congo", "Cote d'Ivoire", 
-    "Djibouti", "Egypt", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", 
-    "Gabon", "Gambia", "Ghana", "Guinea", "Guinea-Bissau", "Kenya", "Lesotho", 
-    "Liberia", "Libya", "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", 
-    "Morocco", "Mozambique", "Namibia", "Niger", "Nigeria", "Rwanda", 
-    "Sao Tome and Principe", "Senegal", "Seychelles", "Sierra Leone", "Somalia", 
-    "South Africa", "South Sudan", "Sudan", "Tanzania", "Togo", "Tunisia", 
-    "Uganda", "Zambia", "Zimbabwe"
-])
-
-# --- HELPER FUNCTIONS ---
-def get_sentiment(text):
-    try:
-        blob = TextBlob(text)
-        score = blob.sentiment.polarity
-        if score > 0.1: return "Positive", "badge-pos", "🟢 Good News"
-        elif score < -0.1: return "Negative", "badge-neg", "🔴 Crisis/Issue"
-        else: return "Neutral", "badge-neu", "⚪ Neutral"
-    except: return "Neutral", "badge-neu", "⚪ Neutral"
-
-def extract_image_url(entry):
-    if hasattr(entry, 'media_content'):
-        for media in entry.media_content:
-            if media.get('medium') == 'image' or media.get('type', '').startswith('image'):
-                return media['url']
-    if hasattr(entry, 'media_thumbnail'):
-         if entry.media_thumbnail: return entry.media_thumbnail[0]['url']
-    if hasattr(entry, 'enclosures'):
-        for enclosure in entry.enclosures:
-            if enclosure.get('type', '').startswith('image'): return enclosure['href']
-    if hasattr(entry, 'summary'):
-        img_match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
-        if img_match: return img_match.group(1)
-    return None
-
-def format_display_date(entry):
-    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-        return time.strftime("%d %b • %H:%M", entry.published_parsed)
-    return "Recent"
-
-def get_relative_time(entry):
-    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-        published_ts = time.mktime(entry.published_parsed)
-        now_ts = time.time()
-        delta_seconds = now_ts - published_ts
-        if delta_seconds < 60: return "Just now"
-        elif delta_seconds < 3600: return f"{int(delta_seconds/60)}m ago"
-        elif delta_seconds < 86400: return f"{int(delta_seconds/3600)}h ago"
-        else: return f"{int(delta_seconds/86400)}d ago"
-    return ""
-
-def parse_date(entry):
-    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-        return time.mktime(entry.published_parsed)
-    return 0
-
-# --- GEMINI AI ---
-def generate_single_post(api_key, story):
-    try:
-        client = genai.Client(api_key=api_key)
-        prompt = f"Write a punchy LinkedIn caption (under 100 words) for: {story['title']} from {story['source']}. Summary: {story['summary']}"
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-        return response.text
-    except Exception as e: return f"Error: {str(e)}"
-
-def generate_newsletter(api_key, stories):
-    try:
-        client = genai.Client(api_key=api_key)
-        stories_text = ""
-        for i, s in enumerate(stories):
-            stories_text += f"{i+1}. {s['title']} ({s['source']}): {s['summary'][:150]}...\n"
-        prompt = f"Write a Morning Briefing newsletter based on these stories:\n{stories_text}\nFormat: Intro, Bullet points, Closing thought."
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-        return response.text
-    except Exception as e: return f"Error: {str(e)}"
-
-# --- DATA FETCHING ---
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_feed_data(url, source_name):
-    try:
-        feed = feedparser.parse(url)
-        articles = []
-        for entry in feed.entries[:6]: 
-            summary = entry.get('summary', 'No summary.')
-            summary = re.sub('<[^<]+?>', '', summary) 
-            if "Guardian" in source_name and "<" in summary: summary = summary.split("<")[0]
-            
-            sent_score, sent_class, sent_label = get_sentiment(entry.title + " " + summary)
-
-            articles.append({
-                'title': entry.title,
-                'link': entry.link,
-                'summary': summary,
-                'published_display': format_display_date(entry),
-                'relative_time': get_relative_time(entry),
-                'timestamp': parse_date(entry),
-                'source': source_name,
-                'image': extract_image_url(entry),
-                'sentiment_class': sent_class,
-                'sentiment_label': sent_label
-            })
-        return articles
-    except: return []
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -298,17 +135,8 @@ else:
     unique_feeds = list(set(selected_feeds))
     
     with st.spinner(f'Scanning {len(unique_feeds)} sources...'):
-        # Parallel Fetching
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Create a dictionary to map futures to source names (optional, for debugging)
-            future_to_url = {executor.submit(fetch_feed_data, url, name): name for name, url in unique_feeds}
-            
-            for future in concurrent.futures.as_completed(future_to_url):
-                try:
-                    stories = future.result()
-                    all_stories.extend(stories)
-                except Exception as e:
-                    st.error(f"Error fetching feed: {e}")
+        # Using the modularized fetch function
+        all_stories = fetch_all_feeds(unique_feeds)
 
     # Deduplicate
     seen_urls = set()
@@ -342,7 +170,7 @@ else:
 
     filtered_stories = sorted(filtered_stories, key=lambda x: x['timestamp'], reverse=True)
 
-    # --- PAGINATION LOGIC (NEW) ---
+    # --- PAGINATION LOGIC ---
     if not filtered_stories:
         st.warning("No stories found.")
     else:
@@ -350,7 +178,7 @@ else:
         total_stories = len(filtered_stories)
         total_pages = math.ceil(total_stories / ITEMS_PER_PAGE)
         
-        # 2. Safety Check (Prevent index out of range if search shrinks results)
+        # 2. Safety Check
         if st.session_state.current_page >= total_pages:
             st.session_state.current_page = 0
             
