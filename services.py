@@ -1,9 +1,46 @@
+import requests
+import subprocess
 import concurrent.futures
 import feedparser
 import streamlit as st
 import re
 from google import genai
 from utils import get_sentiment, extract_image_url, format_display_date, get_relative_time, parse_date
+
+# --- HELPERS ---
+def fetch_content_robust(url):
+    """
+    Attempts to fetch content/RSS XML from a URL using multiple methods 
+    to bypass bot protection (Cloudflare, etc.).
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5"
+    }
+    
+    # Method 1: Requests
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.content
+    except Exception as e:
+        print(f"[Requests] Failed for {url}: {e}")
+
+    # Method 2: Curl (Fallback)
+    try:
+        result = subprocess.run(
+            ["curl", "-L", "-A", headers["User-Agent"], url],
+            capture_output=True,
+            text=False, # Return bytes
+            timeout=15
+        )
+        if result.returncode == 0 and result.stdout:
+            return result.stdout
+    except Exception as e:
+        print(f"[Curl] Failed for {url}: {e}")
+        
+    return None
 
 # --- GEMINI AI ---
 def generate_single_post(api_key, story):
@@ -29,8 +66,15 @@ def generate_newsletter(api_key, stories):
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_feed_data(url, source_name):
     try:
-        feed = feedparser.parse(url)
-        articles = []
+        # Robust fetch
+        content = fetch_content_robust(url)
+        
+        if content:
+             feed = feedparser.parse(content)
+        else:
+             # Last resort: let feedparser try (though it likely failed already)
+             feed = feedparser.parse(url)
+
         if hasattr(feed, 'bozo_exception') and feed.bozo_exception:
              # Log warning but attempt to parse anyway
              print(f"Warning parsing {url}: {feed.bozo_exception}")
