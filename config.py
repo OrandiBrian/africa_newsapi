@@ -6,6 +6,7 @@ FEEDS_BY_REGION = {
     "Pan-African & Tech": {
         "The Africa Report": "https://www.theafricareport.com/feed/",
         "BBC News Africa": "https://feeds.bbci.co.uk/news/world/africa/rss.xml",
+        "Anadolu Agency (Africa)": "https://www.aa.com.tr/en/rss/default?cat=africa",
         "TechCabal": "https://techcabal.com/feed/",
         "Buzzroom": "https://buzzcentral.co.ke/feed/",
         "The Guardian": "https://www.theguardian.com/world/africa/rss",
